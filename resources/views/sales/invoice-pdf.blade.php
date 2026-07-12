@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<meta charset="utf-8">
+
+<title>Invoice</title>
+
+
+<style>
+
+body {
+
+    font-family: DejaVu Sans, sans-serif;
+    font-size: 13px;
+    color:#334155;
+    direction:ltr;
+
+}
+
+
+.container {
+
+    width:100%;
+    padding:20px;
+
+}
+
+
+/* HEADER */
+
+.header {
+
+    background:#4f46e5;
+    color:white;
+    padding:25px;
+    border-radius:15px;
+
+}
+
+
+.header-table {
+
+    width:100%;
+}
+
+
+.header-title {
+
+    font-size:32px;
+    font-weight:bold;
+    letter-spacing:3px;
+
+}
+
+
+.company {
+
+    font-size:15px;
+    margin-top:8px;
+    color:#e0e7ff;
+
+}
+
+
+.invoice-number {
+
+    background:#ffffff;
+    color:#4f46e5;
+    padding:10px 18px;
+    border-radius:8px;
+    font-weight:bold;
+
+}
+
+
+
+
+
+/* INFO */
+
+
+.info-table {
+
+    width:100%;
+    margin-top:25px;
+
+}
+
+
+.card {
+
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    padding:15px;
+}
+
+
+.card-title {
+
+    color:#64748b;
+    font-size:12px;
+    margin-bottom:8px;
+
+}
+
+
+.card-value {
+
+    color:#0f172a;
+    font-weight:bold;
+    font-size:14px;
+
+}
+
+
+
+/* PRODUCTS */
+
+
+.products {
+
+    width:100%;
+    margin-top:30px;
+    border-collapse:collapse;
+
+}
+
+
+.products th {
+
+    background:#eef2ff;
+    color:#3730a3;
+    padding:12px;
+    border:1px solid #cbd5e1;
+    text-align:left;
+
+}
+
+
+
+.products td {
+
+    padding:12px;
+    border:1px solid #cbd5e1;
+
+}
+
+
+
+.price {
+
+    text-align:right;
+
+}
+
+
+
+/* SUMMARY */
+
+
+.summary {
+
+    width:100%;
+    margin-top:25px;
+
+}
+
+
+
+.summary td {
+
+    padding:8px;
+
+}
+
+
+.summary-label {
+
+    text-align:right;
+    color:#64748b;
+
+}
+
+
+.summary-value {
+
+    text-align:right;
+    font-weight:bold;
+
+}
+
+
+
+.total-box {
+
+    margin-top:10px;
+    background:#ecfdf5;
+    border:1px solid #bbf7d0;
+    padding:18px;
+    text-align:right;
+
+}
+
+
+.total-title {
+
+    color:#15803d;
+    font-size:13px;
+
+}
+
+
+.total-number {
+
+    font-size:28px;
+    font-weight:bold;
+    color:#16a34a;
+
+}
+
+
+
+/* FOOTER */
+
+
+.footer {
+
+    margin-top:50px;
+    text-align:center;
+    color:#94a3b8;
+    font-size:12px;
+
+}
+
+
+.line {
+
+    border-top:1px solid #e2e8f0;
+    margin-bottom:15px;
+
+}
+
+
+</style>
+
+
+</head>
+
+
+<body>
+
+
+<div class="container">
+
+
+{{-- HEADER --}}
+
+<div class="header">
+
+
+<table class="header-table">
+
+<tr>
+
+
+<td width="60%">
+
+
+<div class="header-title">
+
+INVOICE
+
+</div>
+
+
+<div class="company">
+
+Your Company Name<br>
+Professional Sales System
+
+</div>
+
+
+</td>
+
+
+
+<td align="right">
+
+
+<div class="invoice-number">
+
+{{ $sale->invoice_number }}
+
+</div>
+
+
+<br>
+
+
+<span>
+
+{{ $sale->created_at->format('Y-m-d H:i') }}
+
+</span>
+
+
+</td>
+
+
+</tr>
+
+</table>
+
+
+</div>
+
+
+
+
+
+{{-- INFORMATION --}}
+
+
+<table class="info-table">
+
+<tr>
+
+
+<td width="33%">
+
+
+<div class="card">
+
+
+<div class="card-title">
+
+CUSTOMER
+
+</div>
+
+
+<div class="card-value">
+
+{{ $sale->customer?->name ?? 'Walk-in Customer' }}
+
+</div>
+
+
+<br>
+
+{{ $sale->customer?->phone ?? '-' }}
+
+<br>
+
+{{ $sale->customer?->email ?? '-' }}
+
+
+</div>
+
+
+</td>
+
+
+
+<td width="33%">
+
+
+<div class="card">
+
+
+<div class="card-title">
+
+WAREHOUSE
+
+</div>
+
+
+<div class="card-value">
+
+{{ $sale->warehouse?->name ?? '-' }}
+
+</div>
+
+
+</div>
+
+
+</td>
+
+
+
+
+<td width="33%">
+
+
+<div class="card">
+
+
+<div class="card-title">
+
+SALES USER
+
+</div>
+
+
+<div class="card-value">
+
+{{ $sale->user?->name ?? '-' }}
+
+</div>
+
+
+</div>
+
+
+</td>
+
+
+</tr>
+
+
+</table>
+
+
+
+
+
+
+{{-- PRODUCTS --}}
+
+
+<table class="products">
+
+
+<thead>
+
+
+<tr>
+
+<th>
+Product
+</th>
+
+
+<th>
+Quantity
+</th>
+
+
+<th>
+Unit Price
+</th>
+
+
+<th>
+Total
+</th>
+
+
+</tr>
+
+
+</thead>
+
+
+
+<tbody>
+
+
+<tr>
+
+
+<td>
+
+{{ $sale->product?->name }}
+
+</td>
+
+
+<td>
+
+{{ $sale->quantity }}
+
+</td>
+
+
+
+<td class="price">
+
+{{ number_format($sale->unit_price,2) }}
+
+</td>
+
+
+
+<td class="price">
+
+{{ number_format($sale->total,2) }}
+
+</td>
+
+
+
+</tr>
+
+
+</tbody>
+
+
+
+</table>
+
+
+
+
+
+
+
+{{-- SUMMARY --}}
+
+
+<table class="summary">
+
+
+<tr>
+
+
+<td class="summary-label">
+
+Subtotal
+
+</td>
+
+
+<td class="summary-value">
+
+{{ number_format($sale->total,2) }}
+
+</td>
+
+
+</tr>
+
+
+
+
+<tr>
+
+
+<td class="summary-label">
+
+Discount
+
+</td>
+
+
+<td class="summary-value">
+
+0.00
+
+</td>
+
+
+</tr>
+
+
+
+
+<tr>
+
+
+<td class="summary-label">
+
+Tax
+
+</td>
+
+
+<td class="summary-value">
+
+0.00
+
+</td>
+
+
+</tr>
+
+
+</table>
+
+
+
+
+
+
+<div class="total-box">
+
+
+<div class="total-title">
+
+GRAND TOTAL
+
+</div>
+
+
+
+<div class="total-number">
+
+{{ number_format($sale->total,2) }}
+
+</div>
+
+
+
+</div>
+
+
+
+
+
+
+<div class="footer">
+
+
+<div class="line"></div>
+
+
+Thank you for your business ❤️
+
+
+<br><br>
+
+
+Generated by HR & ERP Management System
+
+
+</div>
+
+
+
+
+</div>
+
+
+</body>
+
+
+</html>
