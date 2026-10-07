@@ -11,6 +11,8 @@ use App\Models\Customer;
 use Barryvdh\DomPDF\Facade\Pdf;
 use App\Models\Account;
 use App\Services\AccountingService;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class SaleController extends Controller
 {
@@ -49,139 +51,129 @@ class SaleController extends Controller
         );
     }
 
-    public function store(Request $request)
+    public function store(Request $request, AccountingService $accounting)
     {
-        $request->validate([
-
-            'customer_id' => 'required',
-
-            'product_id' => 'required',
-
-            'warehouse_id' => 'required',
-
-            'quantity' => 'required|integer|min:1',
-
+        $data = $request->validate([
+            'customer_id'  => 'required|exists:customers,id',
+            'product_id'   => 'required|exists:products,id',
+            'warehouse_id' => 'required|exists:warehouses,id',
+            'quantity'     => 'required|integer|min:1|max:1000000',
         ]);
 
-        $product = Product::findOrFail(
-            $request->product_id
-        );
+        try {
+            DB::transaction(function () use ($data, $accounting) {
 
-        if (
-            $request->quantity >
-            $product->quantity
-        ) {
-            return back()
-                ->with(
-                    'error',
-                    'Not enough stock'
-                );
-        }
+                $acc = $accounting->accounts(['1000', '4000']);
 
-        $total =
-            $product->sale_price *
-            $request->quantity;
+                // lock the row so two concurrent sales cannot oversell
+                $product = Product::lockForUpdate()->findOrFail($data['product_id']);
 
-        $sale = Sale::create([
+                if ($data['quantity'] > $product->quantity) {
+                    throw new RuntimeException('Not enough stock');
+                }
 
-            'invoice_number' =>
-                'INV-' .
-                now()->format('YmdHis') .
-                '-' .
-                rand(100,999),
+                $total = round($product->sale_price * $data['quantity'], 2);
 
-            'customer_id' =>
-                $request->customer_id,
+                $sale = Sale::create([
+                    'customer_id'  => $data['customer_id'],
+                    'product_id'   => $product->id,
+                    'warehouse_id' => $data['warehouse_id'],
+                    'quantity'     => $data['quantity'],
+                    'unit_price'   => $product->sale_price,
+                    'total'        => $total,
+                    'user_id'      => auth()->id(),
+                ]);
 
-            'product_id' =>
-                $product->id,
+                // id based => unique, no more rand() collisions
+                $sale->update([
+                    'invoice_number' => 'INV-' . str_pad($sale->id, 6, '0', STR_PAD_LEFT),
+                ]);
 
-            'warehouse_id' =>
-                $request->warehouse_id,
+                $product->decrement('quantity', $data['quantity']);
 
-            'quantity' =>
-                $request->quantity,
+                StockMovement::create([
+                    'product_id'   => $product->id,
+                    'warehouse_id' => $data['warehouse_id'],
+                    'user_id'      => auth()->id(),
+                    'type'         => 'out',
+                    'quantity'     => $data['quantity'],
+                    'note'         => 'Sale #' . $sale->id,
+                ]);
 
-            'unit_price' =>
-                $product->sale_price,
-
-            'total' =>
-                $total,
-
-            'user_id' =>
-                auth()->id(),
-
-        ]);
-
-        $product->decrement(
-            'quantity',
-            $request->quantity
-        );
-
-        StockMovement::create([
-
-            'product_id' =>
-                $product->id,
-
-            'warehouse_id' =>
-                $request->warehouse_id,
-
-            'user_id' =>
-                auth()->id(),
-
-            'type' =>
-                'out',
-
-            'quantity' =>
-                $request->quantity,
-
-            'note' =>
-                'Sale #'.$sale->id,
-
-        ]);
-
-        $cash = Account::where(
-            'code',
-            '1000'
-        )->first();
-
-        $salesAccount = Account::where(
-            'code',
-            '4000'
-        )->first();
-
-        if ($cash && $salesAccount) {
-
-            $accounting = new AccountingService();
-
-            $accounting->createEntry(
-                'Sale Invoice '.$sale->invoice_number,
-                auth()->id(),
-                [
+                $accounting->createEntry(
+                    'Sale Invoice ' . $sale->invoice_number,
+                    auth()->id(),
                     [
-                        'account_id' =>
-                            $cash->id,
-
-                        'debit' =>
-                            $sale->total,
-                    ],
-                    [
-                        'account_id' =>
-                            $salesAccount->id,
-
-                        'credit' =>
-                            $sale->total,
+                        ['account_id' => $acc['1000']->id, 'debit'  => $total],
+                        ['account_id' => $acc['4000']->id, 'credit' => $total],
                     ]
-                ]
-            );
+                );
+            });
+        } catch (RuntimeException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
         }
 
         return redirect()
             ->route('sales.index')
-            ->with(
-                'success',
-                'Sale Created'
-            );
+            ->with('success', 'Sale Created');
+    }
+
+    /**
+     * Cancel a sale: stock goes back, a reversing journal entry is posted.
+     * Nothing is deleted, so the audit trail and invoice numbering stay intact.
+     */
+    public function cancel(Request $request, Sale $sale, AccountingService $accounting)
+    {
+        $data = $request->validate([
+            'reason' => 'required|string|max:255',
+        ]);
+
+        try {
+            DB::transaction(function () use ($sale, $data, $accounting) {
+
+                $acc = $accounting->accounts(['1000', '4000']);
+
+                // lock so a double click cannot restore the stock twice
+                $locked = Sale::lockForUpdate()->findOrFail($sale->id);
+
+                if ($locked->isCancelled()) {
+                    throw new RuntimeException('This sale is already cancelled.');
+                }
+
+                Product::whereKey($locked->product_id)->increment('quantity', $locked->quantity);
+
+                StockMovement::create([
+                    'product_id'   => $locked->product_id,
+                    'warehouse_id' => $locked->warehouse_id,
+                    'user_id'      => auth()->id(),
+                    'type'         => 'in',
+                    'quantity'     => $locked->quantity,
+                    'note'         => 'Cancel ' . $locked->invoice_number,
+                ]);
+
+                $accounting->createEntry(
+                    'Reversal of ' . $locked->invoice_number . ' (cancelled)',
+                    auth()->id(),
+                    [
+                        ['account_id' => $acc['4000']->id, 'debit'  => $locked->total],
+                        ['account_id' => $acc['1000']->id, 'credit' => $locked->total],
+                    ]
+                );
+
+                $locked->update([
+                    'status'        => 'cancelled',
+                    'cancelled_at'  => now(),
+                    'cancelled_by'  => auth()->id(),
+                    'cancel_reason' => $data['reason'],
+                ]);
+
+                \App\Models\AuditLog::record('sale.cancelled', $locked, $data['reason']);
+            });
+        } catch (RuntimeException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Sale cancelled and stock restored');
     }
 
     public function invoice(Sale $sale)

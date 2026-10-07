@@ -10,6 +10,9 @@ use App\Http\Requests\StoreEmployeeRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use App\Models\LeaveBalance;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class EmployeeController extends Controller
 {
@@ -52,108 +55,56 @@ class EmployeeController extends Controller
         StoreEmployeeRequest $request
     )
     {
-        DB::transaction(function () use ($request) {
+        // random temporary password (was a hard-coded "12345678" for everyone)
+        $tempPassword = Str::random(10);
 
-            $lastEmployee = Employee::latest()
-                ->first();
+        DB::transaction(function () use ($request, $tempPassword) {
 
-            $number = $lastEmployee
-                ? $lastEmployee->id + 1
-                : 1;
-
-            $employeeNo = 'EMP-' .
-                str_pad(
-                    $number,
-                    5,
-                    '0',
-                    STR_PAD_LEFT
-                );
+            // placeholder, replaced by the id based number right after the insert
+            // (max(id)+1 produced duplicates when two admins saved at once)
+            $employeeNo = 'TMP-' . Str::random(12);
 
             $avatar = null;
 
             if ($request->hasFile('avatar')) {
-
-                $avatar = $request
-                    ->file('avatar')
-                    ->store(
-                        'employees',
-                        'public'
-                    );
+                $avatar = $request->file('avatar')->store('employees', 'public');
             }
 
             $user = User::create([
-
-                'name' =>
-                    $request->first_name . ' ' .
-                    $request->last_name,
-
-                'email' =>
-                    $request->email,
-
-                'phone' =>
-                    $request->phone,
-
-                'password' =>
-                    Hash::make('12345678'),
-
+                'name'      => $request->first_name . ' ' . $request->last_name,
+                'email'     => $request->email,
+                'phone'     => $request->phone,
+                'password'  => Hash::make($tempPassword),
                 'is_active' => true,
-
             ]);
 
-            $user->assignRole(
-                'Employee'
-            );
+            $user->assignRole('Employee');
 
             $employee = Employee::create([
-
-                'user_id' => $user->id,
-
-                'employee_no' =>
-                    $employeeNo,
-
-                'department_id' =>
-                    $request->department_id,
-
-                'first_name' =>
-                    $request->first_name,
-
-                'last_name' =>
-                    $request->last_name,
-
-                'email' =>
-                    $request->email,
-
-                'phone' =>
-                    $request->phone,
-
-                'position' =>
-                    $request->position,
-
-                'salary' =>
-                    $request->salary,
-
-                'join_date' =>
-                    $request->join_date,
-
-                'avatar' =>
-                    $avatar,
-
+                'user_id'              => $user->id,
+                'employee_no'          => $employeeNo,
+                'department_id'        => $request->department_id,
+                'first_name'           => $request->first_name,
+                'last_name'            => $request->last_name,
+                'email'                => $request->email,
+                'phone'                => $request->phone,
+                'position'             => $request->position,
+                'salary'               => $request->salary,
+                'join_date'            => $request->join_date,
+                'avatar'               => $avatar,
                 'annual_leave_balance' => 21,
+                'is_active'            => true,
+            ]);
 
-                'is_active' => true,
-
+            $employee->update([
+                'employee_no' => 'EMP-' . str_pad($employee->id, 5, '0', STR_PAD_LEFT),
             ]);
 
             LeaveBalance::create([
-
-                'employee_id' => $employee->id,
-            
-                'annual_balance' => 21,
-            
-                'used_balance' => 0,
-            
+                'employee_id'       => $employee->id,
+                'annual_balance'    => 21,
+                'used_balance'      => 0,
                 'remaining_balance' => 21,
-            
             ]);
         });
 
@@ -161,7 +112,8 @@ class EmployeeController extends Controller
             ->route('employees.index')
             ->with(
                 'success',
-                'Employee Created Successfully'
+                'Employee Created Successfully. Temporary password (shown once): '
+                    . $tempPassword
             );
     }
 
@@ -186,15 +138,22 @@ class EmployeeController extends Controller
     )
     {
         $request->validate([
-
-            'employee_no' => 'required',
-
-            'first_name' => 'required',
-
-            'last_name' => 'required',
-
-            'email' => 'nullable|email',
-
+            'employee_no' => [
+                'required',
+                Rule::unique('employees', 'employee_no')->ignore($employee->id),
+            ],
+            'first_name'    => 'required|string|max:100',
+            'last_name'     => 'required|string|max:100',
+            'phone'         => 'nullable|string|max:50',
+            'position'      => 'nullable|string|max:100',
+            'email'         => [
+                'required',
+                'email',
+                Rule::unique('employees', 'email')->ignore($employee->id),
+                Rule::unique('users', 'email')->ignore($employee->user_id),
+            ],
+            'department_id' => 'required|exists:departments,id',
+            'salary'        => 'required|numeric|min:0|max:999999999',
         ]);
 
         $employee->update([
@@ -229,6 +188,8 @@ class EmployeeController extends Controller
         ]);
 
         if ($employee->user) {
+            $keepActive = $employee->user->id === auth()->id()
+                || $employee->user->hasRole('Super Admin');
 
             $employee->user->update([
 
@@ -243,8 +204,7 @@ class EmployeeController extends Controller
                     $request->phone,
 
                 'is_active' =>
-                    $request->has('is_active'),
-
+                    $keepActive ? true : $request->has('is_active'),
             ]);
         }
 
@@ -260,18 +220,32 @@ class EmployeeController extends Controller
         Employee $employee
     )
     {
-        if ($employee->user) {
+        $linked = $employee->user;
 
-            $employee->user->delete();
+        if ($linked && ($linked->id === auth()->id() || $linked->hasRole('Super Admin'))) {
+            return back()->with('error', 'This employee is linked to a protected account.');
         }
 
-        $employee->delete();
+        $avatar = $employee->avatar;
+
+        DB::transaction(function () use ($employee) {
+
+            $user = $employee->user;
+
+            $employee->delete();
+
+            if ($user) {
+                $user->delete();
+            }
+        });
+
+        // only after the DB delete succeeded
+        if ($avatar) {
+            Storage::disk('public')->delete($avatar);
+        }
 
         return redirect()
             ->route('employees.index')
-            ->with(
-                'success',
-                'Employee Deleted Successfully'
-            );
+            ->with('success', 'Employee Deleted Successfully');
     }
 }

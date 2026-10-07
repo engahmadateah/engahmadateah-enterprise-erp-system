@@ -20,11 +20,12 @@ class StoreUserRequest extends FormRequest
     
             'name' => 'required|max:255',
     
-            'email' => 'required|email|unique:users,email',
+            'email' => 'required|email|max:255|unique:users,email',
     
             'phone' => 'nullable|max:30',
     
-            'password' => 'required|min:8',
+            'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::defaults()],
+            'role' => 'required|exists:roles,name',
     
         ];
     }

@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Account extends Model
 {
+    use \App\Models\Concerns\Auditable;
+
     protected $fillable = [
 
         'code',

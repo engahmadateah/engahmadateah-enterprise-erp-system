@@ -66,11 +66,20 @@ class ChatController extends Controller
         Conversation $conversation
     )
     {
+        abort_unless(
+            $conversation
+                ->users()
+                ->where('users.id', auth()->id())
+                ->exists(),
+            403
+        );
+
         $request->validate([
 
-            'message' => 'nullable|string',
+            'message' => 'nullable|string|max:5000',
 
-            'attachment' => 'nullable|file|max:10240'
+            // whitelist: no html/svg/php/js ever reaches the disk
+            'attachment' => 'nullable|file|max:10240|mimes:jpg,jpeg,png,gif,webp,pdf,doc,docx,xls,xlsx,csv,txt,zip'
 
         ]);
 
@@ -89,10 +98,7 @@ class ChatController extends Controller
 
             $filePath = $request
                 ->file('attachment')
-                ->store(
-                    'chat-files',
-                    'public'
-                );
+                ->store('chat-files', 'local');   // private disk
         }
 
         Message::create([
@@ -101,13 +107,39 @@ class ChatController extends Controller
 
             'user_id' => auth()->id(),
 
-            'message' => $request->message,
+            'message' => $request->message ?? '',
 
             'attachment' => $filePath
 
         ]);
 
         return back();
+    }
+
+    /** Authorised download of a chat attachment (private disk). */
+    public function attachment(Message $message)
+    {
+        abort_unless(
+            $message->attachment
+                && $message->conversation
+                    ->users()
+                    ->where('users.id', auth()->id())
+                    ->exists(),
+            403
+        );
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('local');
+
+        // files uploaded before this fix live on the public disk
+        if (! $disk->exists($message->attachment)) {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        }
+
+        abort_unless($disk->exists($message->attachment), 404);
+
+        return $disk->download($message->attachment, null, [
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     public function users(Request $request)
@@ -140,6 +172,8 @@ class ChatController extends Controller
     public function start(User $user)
     {
         $myId = auth()->id();
+
+        abort_if($user->id === $myId || ! $user->is_active, 422);
 
         $conversation = Conversation::where(
                 'type',

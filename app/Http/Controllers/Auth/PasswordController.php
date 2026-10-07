@@ -24,6 +24,8 @@ class PasswordController extends Controller
             'password' => Hash::make($validated['password']),
         ]);
 
+        $request->session()->put('password_hash_web', $request->user()->getAuthPassword());
+
         return back()->with('status', 'password-updated');
     }
 }

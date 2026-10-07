@@ -357,12 +357,12 @@ $ext = strtolower(
 @if(in_array($ext,['jpg','jpeg','png','gif','webp']))
 
 
-<a href="{{ asset('storage/'.$message->attachment) }}"
+<a href="{{ route('chat.attachment', $message) }}"
    target="_blank"
    class="block mt-5">
 
 
-<img src="{{ asset('storage/'.$message->attachment) }}"
+<img src="{{ route('chat.attachment', $message) }}"
      class="rounded-3xl max-w-md shadow-xl">
 
 
@@ -373,7 +373,7 @@ $ext = strtolower(
 @else
 
 
-<a href="{{ asset('storage/'.$message->attachment) }}"
+<a href="{{ route('chat.attachment', $message) }}"
    target="_blank"
    class="inline-flex items-center gap-2
           mt-5 px-5 py-3
@@ -496,12 +496,12 @@ $ext = strtolower(
 @if(in_array($ext,['jpg','jpeg','png','gif','webp']))
 
 
-<a href="{{ asset('storage/'.$message->attachment) }}"
+<a href="{{ route('chat.attachment', $message) }}"
    target="_blank"
    class="block mt-5">
 
 
-<img src="{{ asset('storage/'.$message->attachment) }}"
+<img src="{{ route('chat.attachment', $message) }}"
      class="rounded-3xl max-w-md shadow-lg">
 
 
@@ -512,7 +512,7 @@ $ext = strtolower(
 @else
 
 
-<a href="{{ asset('storage/'.$message->attachment) }}"
+<a href="{{ route('chat.attachment', $message) }}"
    target="_blank"
    class="inline-flex items-center gap-3
           mt-5 px-5 py-3

@@ -29,621 +29,211 @@ use App\Http\Controllers\JournalEntryController;
 use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\TicketController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\AuditLogController;
+use App\Http\Controllers\ReportController;
 
+Route::get('/', fn () => redirect()->route('dashboard'));
 
+/*
+|--------------------------------------------------------------------------
+| Helper: register a resource where every action is protected by the
+| matching permission  ( <prefix>.view / .create / .edit / .delete )
+|--------------------------------------------------------------------------
+*/
+$crud = function (
+    string $uri,
+    string $controller,
+    string $perm,
+    array $actions = ['index', 'create', 'store', 'edit', 'update', 'destroy']
+) {
+    $map = [
+        'index'   => 'view',
+        'show'    => 'view',
+        'create'  => 'create',
+        'store'   => 'create',
+        'edit'    => 'edit',
+        'update'  => 'edit',
+        'destroy' => 'delete',
+    ];
 
+    // order matters: create must be registered before show ({param})
+    foreach ($actions as $action) {
+        Route::resource($uri, $controller)
+            ->only([$action])
+            ->middleware('permission:' . $perm . '.' . $map[$action]);
+    }
+};
 
-Route::get('/', function () {
-    return redirect()->route('dashboard');
-});
+Route::middleware('auth')->group(function () use ($crud) {
 
-Route::middleware(['auth'])->group(function () {
+    /* ---------------- Dashboard & Profile ---------------- */
 
-    /*
-    |--------------------------------------------------------------------------
-    | Dashboard
-    |--------------------------------------------------------------------------
-    */
+    Route::get('/dashboard', [DashboardController::class, 'index'])
+        ->name('dashboard');
 
-    Route::get('/dashboard', [
-        DashboardController::class,
-        'index'
-    ])->name('dashboard');
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Profile
-    |--------------------------------------------------------------------------
-    */
+    /* ---------------- Users / Roles ---------------- */
 
-    Route::get('/profile', [
-        ProfileController::class,
-        'edit'
-    ])->name('profile.edit');
+    $crud('users', UserController::class, 'users');
+    $crud('roles', RoleController::class, 'roles');
 
-    Route::patch('/profile', [
-        ProfileController::class,
-        'update'
-    ])->name('profile.update');
+    /* ---------------- HR ---------------- */
 
-    Route::delete('/profile', [
-        ProfileController::class,
-        'destroy'
-    ])->name('profile.destroy');
+    $crud('departments', DepartmentController::class, 'departments');
+    $crud('employees', EmployeeController::class, 'employees');
 
-    /*
-    |--------------------------------------------------------------------------
-    | Users
-    |--------------------------------------------------------------------------
-    */
+    // daily-sheet routes must not clash with attendance/{attendance}
+    Route::middleware('permission:attendance.create')->group(function () {
+        Route::get('/attendance/daily-sheet', [AttendanceController::class, 'dailySheet'])
+            ->name('attendance.daily-sheet');
+        Route::post('/attendance/daily-sheet', [AttendanceController::class, 'saveDailySheet'])
+            ->name('attendance.daily-sheet.save');
+    });
+    $crud('attendance', AttendanceController::class, 'attendance');
 
-    Route::middleware('permission:users.view')
-        ->group(function () {
+    $crud('overtimes', OvertimeController::class, 'overtime', ['index', 'create', 'store']);
+    $crud('bonuses', BonusController::class, 'bonus', ['index', 'create', 'store']);
+    $crud('advances', AdvanceController::class, 'advance', ['index', 'create', 'store']);
+    $crud('loans', LoanController::class, 'loans', ['index', 'create', 'store']);
 
-            Route::get('/users', [
-                UserController::class,
-                'index'
-            ])->name('users.index');
+    /* ---------------- Payroll ---------------- */
 
-        });
-
-    Route::middleware('permission:users.create')
-        ->group(function () {
-
-            Route::get('/users/create', [
-                UserController::class,
-                'create'
-            ])->name('users.create');
-
-            Route::post('/users', [
-                UserController::class,
-                'store'
-            ])->name('users.store');
-
-        });
-
-    Route::middleware('permission:users.edit')
-        ->group(function () {
-
-            Route::get('/users/{user}/edit', [
-                UserController::class,
-                'edit'
-            ])->name('users.edit');
-
-            Route::put('/users/{user}', [
-                UserController::class,
-                'update'
-            ])->name('users.update');
-
-        });
-
-    Route::middleware('permission:users.delete')
-        ->group(function () {
-
-            Route::delete('/users/{user}', [
-                UserController::class,
-                'destroy'
-            ])->name('users.destroy');
-
-        });
-
-});
-
-
-Route::middleware('permission:roles.view')
-    ->group(function () {
-
-        Route::get('/roles', [
-            RoleController::class,
-            'index'
-        ])->name('roles.index');
-
+    Route::middleware('permission:payroll.view')->group(function () {
+        Route::get('/payroll', [PayrollController::class, 'index'])->name('payroll.index');
+        Route::get('/payroll/verify/{id}', [PayrollController::class, 'verify'])->name('payroll.verify');
     });
 
-Route::middleware('permission:roles.create')
-    ->group(function () {
-
-        Route::get('/roles/create', [
-            RoleController::class,
-            'create'
-        ])->name('roles.create');
-
-        Route::post('/roles', [
-            RoleController::class,
-            'store'
-        ])->name('roles.store');
-
+    Route::middleware('permission:payroll.create')->group(function () {
+        Route::get('/payroll/create', [PayrollController::class, 'create'])->name('payroll.create');
+        Route::post('/payroll', [PayrollController::class, 'store'])->name('payroll.store');
+        Route::get('/payroll/generate', fn () => view('payroll.generate'))->name('payroll.generate.form');
+        Route::post('/payroll/generate', [PayrollController::class, 'generateMonthlyPayroll'])->name('payroll.generate');
     });
 
-Route::middleware('permission:roles.edit')
-    ->group(function () {
+    // access check (payroll.view OR own slip) is done inside the controller
+    Route::get('/payroll/{payroll}/slip', [PayrollController::class, 'slip'])->name('payroll.slip');
 
-        Route::get('/roles/{role}/edit', [
-            RoleController::class,
-            'edit'
-        ])->name('roles.edit');
+    /* ---------------- Leaves ---------------- */
 
-        Route::put('/roles/{role}', [
-            RoleController::class,
-            'update'
-        ])->name('roles.update');
-
+    Route::middleware('permission:leaves.view')->get('/leaves', [LeaveController::class, 'index'])->name('leaves.index');
+    Route::middleware('permission:leaves.edit')->group(function () {
+        Route::post('/leaves/{leave}/approve', [LeaveController::class, 'approve'])->name('leaves.approve');
+        Route::post('/leaves/{leave}/reject', [LeaveController::class, 'reject'])->name('leaves.reject');
     });
 
-Route::middleware('permission:roles.delete')
-    ->group(function () {
-
-        Route::delete('/roles/{role}', [
-            RoleController::class,
-            'destroy'
-        ])->name('roles.destroy');
-
+    Route::middleware('permission:leave-balance.view')->get('/leave-balances', [LeaveBalanceController::class, 'index'])->name('leave-balances.index');
+    Route::middleware('permission:leave-balance.edit')->group(function () {
+        Route::get('/leave-balances/{leaveBalance}/edit', [LeaveBalanceController::class, 'edit'])->name('leave-balances.edit');
+        Route::put('/leave-balances/{leaveBalance}', [LeaveBalanceController::class, 'update'])->name('leave-balances.update');
     });
-    Route::middleware('permission:departments.view')
-->group(function () {
 
-    Route::get(
-        '/departments',
-        [DepartmentController::class,'index']
-    )->name('departments.index');
+    Route::middleware('permission:my-leaves.view')->get('/my-leaves', [MyLeaveController::class, 'index'])->name('my-leaves.index');
+    Route::middleware('permission:my-leaves.create')->group(function () {
+        Route::get('/my-leaves/create', [MyLeaveController::class, 'create'])->name('my-leaves.create');
+        Route::post('/my-leaves', [MyLeaveController::class, 'store'])->name('my-leaves.store');
+    });
 
-});
-Route::middleware('permission:departments.create')
-->group(function () {
+    /* ---------------- Inventory ---------------- */
 
-    Route::get(
-        '/departments/create',
-        [DepartmentController::class,'create']
-    )->name('departments.create');
+    Route::middleware('permission:stock.in')
+        ->post('/products/{product}/add-stock', [ProductController::class, 'addStock'])
+        ->name('products.addStock');
+    Route::middleware('permission:stock.out')
+        ->post('/products/{product}/sell-stock', [ProductController::class, 'sellStock'])
+        ->name('products.sellStock');
 
-    Route::post(
-        '/departments',
-        [DepartmentController::class,'store']
-    )->name('departments.store');
+    $crud('products', ProductController::class, 'products', ['index', 'create', 'store', 'show', 'edit', 'update', 'destroy']);
+    $crud('categories', CategoryController::class, 'categories');
+    $crud('warehouses', WarehouseController::class, 'warehouses');
 
-});
-Route::middleware('permission:departments.edit')
-->group(function () {
+    Route::middleware('permission:stock.view')
+        ->get('/stock-movements', [StockMovementController::class, 'index'])
+        ->name('stock-movements.index');
 
-    Route::get(
-        '/departments/{department}/edit',
-        [DepartmentController::class,'edit']
-    )->name('departments.edit');
+    /* ---------------- Purchases / Sales ---------------- */
 
-    Route::put(
-        '/departments/{department}',
-        [DepartmentController::class,'update']
-    )->name('departments.update');
+    $crud('suppliers', SupplierController::class, 'suppliers');
+    $crud('purchases', PurchaseController::class, 'purchases', ['index', 'create', 'store']);
+    $crud('customers', CustomerController::class, 'customers');
 
-});
-Route::middleware('permission:departments.delete')
-->group(function () {
+    Route::middleware('permission:sales.view')->group(function () {
+        Route::get('/sales/{sale}/invoice', [SaleController::class, 'invoice'])->name('sales.invoice');
+        Route::get('/sales/{sale}/pdf', [SaleController::class, 'pdf'])->name('sales.pdf');
+    });
+    $crud('sales', SaleController::class, 'sales', ['index', 'create', 'store']);
 
-    Route::delete(
-        '/departments/{department}',
-        [DepartmentController::class,'destroy']
-    )->name('departments.destroy');
+    /* ---------------- Accounting ---------------- */
 
-});
-Route::middleware(
-    'permission:employees.view'
-)->group(function () {
+    // the sidebar shows Accounts / Journal under "accounting.view",
+    // so either permission is accepted for the listing pages
+    Route::middleware('permission:accounts.view|accounting.view')
+        ->get('/accounts', [AccountController::class, 'index'])->name('accounts.index');
+    Route::middleware('permission:accounts.create')->group(function () {
+        Route::get('/accounts/create', [AccountController::class, 'create'])->name('accounts.create');
+        Route::post('/accounts', [AccountController::class, 'store'])->name('accounts.store');
+    });
+    Route::middleware('permission:accounts.edit')->group(function () {
+        Route::get('/accounts/{account}/edit', [AccountController::class, 'edit'])->name('accounts.edit');
+        Route::put('/accounts/{account}', [AccountController::class, 'update'])->name('accounts.update');
+    });
+    Route::middleware('permission:accounts.delete')
+        ->delete('/accounts/{account}', [AccountController::class, 'destroy'])->name('accounts.destroy');
 
-    Route::get(
-        '/employees',
-        [EmployeeController::class,'index']
-    )->name('employees.index');
+    Route::middleware('permission:journal-entries.view|accounting.view')
+        ->get('/journal-entries', [JournalEntryController::class, 'index'])->name('journal-entries.index');
 
-});
-Route::middleware(
-    'permission:employees.create'
-)->group(function () {
+    Route::middleware('permission:accounting.view')
+        ->get('/accounting', [AccountingController::class, 'index'])->name('accounting.index');
 
-    Route::get(
-        '/employees/create',
-        [EmployeeController::class,'create']
-    )->name('employees.create');
+    Route::middleware('permission:sales.cancel')
+        ->post('/sales/{sale}/cancel', [SaleController::class, 'cancel'])->name('sales.cancel');
 
-    Route::post(
-        '/employees',
-        [EmployeeController::class,'store']
-    )->name('employees.store');
+    /* ---------------- Reports / Audit ---------------- */
 
-});
-Route::middleware(
-    'permission:employees.edit'
-)->group(function () {
+    Route::middleware('permission:reports.view')->group(function () {
+        Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+        Route::get('/reports/export/sales', [ReportController::class, 'exportSales'])
+            ->middleware('permission:sales.view')->name('reports.export.sales');
+        Route::get('/reports/export/products', [ReportController::class, 'exportProducts'])
+            ->middleware('permission:products.view')->name('reports.export.products');
+    });
 
-    Route::get(
-        '/employees/{employee}/edit',
-        [EmployeeController::class,'edit']
-    )->name('employees.edit');
+    Route::middleware('permission:audit.view')
+        ->get('/audit-logs', [AuditLogController::class, 'index'])->name('audit-logs.index');
 
-    Route::put(
-        '/employees/{employee}',
-        [EmployeeController::class,'update']
-    )->name('employees.update');
+    /* ---------------- Tickets ---------------- */
 
-});
-Route::middleware(
-    'permission:employees.delete'
-)->group(function () {
+    // 'manage' must be declared before tickets/{ticket}
+    Route::middleware('permission:managetickets.view')->group(function () {
+        Route::get('/tickets/manage', [TicketController::class, 'manage'])->name('tickets.manage');
+        Route::put('/tickets/{ticket}/status', [TicketController::class, 'updateStatus'])->name('tickets.status');
+    });
+    Route::middleware('permission:tickets.create')->group(function () {
+        Route::get('/tickets/create', [TicketController::class, 'create'])->name('tickets.create');
+        Route::post('/tickets', [TicketController::class, 'store'])->name('tickets.store');
+    });
+    Route::get('/tickets/{ticket}/attachment/{index}', [TicketController::class, 'attachment'])
+        ->whereNumber('index')->name('tickets.attachment');
+    Route::middleware('permission:tickets.view')->get('/tickets', [TicketController::class, 'index'])->name('tickets.index');
+    Route::middleware('permission:tickets.edit')->group(function () {
+        Route::get('/tickets/{ticket}/edit', [TicketController::class, 'edit'])->name('tickets.edit');
+        Route::put('/tickets/{ticket}', [TicketController::class, 'update'])->name('tickets.update');
+    });
+    Route::middleware('permission:tickets.delete')
+        ->delete('/tickets/{ticket}', [TicketController::class, 'destroy'])->name('tickets.destroy');
 
-    Route::delete(
-        '/employees/{employee}',
-        [EmployeeController::class,'destroy']
-    )->name('employees.destroy');
+    /* ---------------- Chat ---------------- */
 
-});
-Route::middleware(
-    ['auth','permission:attendance.view']
-)->group(function () {
-
-    Route::get(
-        '/attendance',
-        [AttendanceController::class,'index']
-    )->name('attendance.index');
-
-});
-Route::middleware(
-    ['auth','permission:attendance.create']
-)->group(function () {
-
-    Route::get(
-        '/attendance/create',
-        [AttendanceController::class,'create']
-    )->name('attendance.create');
-
-    Route::post(
-        '/attendance',
-        [AttendanceController::class,'store']
-    )->name('attendance.store');
-
-});
-Route::middleware(
-    ['auth','permission:attendance.edit']
-)->group(function () {
-
-    Route::get(
-        '/attendance/{attendance}/edit',
-        [AttendanceController::class,'edit']
-    )->name('attendance.edit');
-
-    Route::put(
-        '/attendance/{attendance}',
-        [AttendanceController::class,'update']
-    )->name('attendance.update');
-
-});
-Route::middleware(
-    ['auth','permission:attendance.delete']
-)->group(function () {
-
-    Route::delete(
-        '/attendance/{attendance}',
-        [AttendanceController::class,'destroy']
-    )->name('attendance.destroy');
-
-});
-Route::middleware([
-    'auth',
-    'permission:attendance.create'
-])->group(function () {
-
-    Route::get(
-        '/attendance/daily-sheet',
-        [AttendanceController::class, 'dailySheet']
-    )->name('attendance.daily-sheet');
-
-    Route::post(
-        '/attendance/daily-sheet',
-        [AttendanceController::class, 'saveDailySheet']
-    )->name('attendance.daily-sheet.save');
-
-});
-Route::middleware([
-    'auth'
-])->group(function () {
-
-    Route::get(
-        '/payroll',
-        [PayrollController::class,'index']
-    )->name('payroll.index');
-
-    Route::get(
-        '/payroll/create',
-        [PayrollController::class,'create']
-    )->name('payroll.create');
-
-    Route::post(
-        '/payroll',
-        [PayrollController::class,'store']
-    )->name('payroll.store');
-
-   
-
-});
-Route::get('/payroll/{payroll}/slip', [
-    PayrollController::class,
-    'slip'
-])->name('payroll.slip');
-
-Route::get('/payroll/verify/{id}', [
-    PayrollController::class,
-    'verify'
-])->name('payroll.verify');
-
-Route::middleware([
-    'auth',
-    'permission:overtime.view'
-])->group(function () {
-
-    Route::get(
-        '/overtimes',
-        [OvertimeController::class,'index']
-    )->name('overtimes.index');
-
+    Route::middleware('permission:chat.view')->group(function () {
+        Route::get('/chat', [ChatController::class, 'index'])->name('chat.index');
+        Route::get('/chat/users', [ChatController::class, 'users'])->name('chat.users');
+        Route::post('/chat/start/{user}', [ChatController::class, 'start'])->name('chat.start');
+        Route::get('/chat/attachment/{message}', [ChatController::class, 'attachment'])->name('chat.attachment');
+        Route::get('/chat/{conversation}', [ChatController::class, 'show'])->name('chat.show');
+        Route::post('/chat/{conversation}', [ChatController::class, 'send'])->name('chat.send');
+    });
 });
 
-Route::middleware([
-    'auth',
-    'permission:overtime.create'
-])->group(function () {
-
-    Route::get(
-        '/overtimes/create',
-        [OvertimeController::class,'create']
-    )->name('overtimes.create');
-
-});
-Route::post(
-    '/overtimes',
-    [OvertimeController::class,'store']
-)->name('overtimes.store');
-Route::middleware([
-    'auth',
-    'permission:bonus.view'
-])->group(function () {
-
-    Route::get(
-        '/bonuses',
-        [BonusController::class,'index']
-    )->name('bonuses.index');
-
-});
-Route::middleware([
-    'auth',
-    'permission:bonus.create'
-])->group(function () {
-
-    Route::get(
-        '/bonuses/create',
-        [BonusController::class,'create']
-    )->name('bonuses.create');
-
-    Route::post(
-        '/bonuses',
-        [BonusController::class,'store']
-    )->name('bonuses.store');
-
-});
-Route::middleware([
-    'auth',
-    'permission:advance.view'
-])->group(function () {
-
-    Route::get(
-        '/advances',
-        [AdvanceController::class,'index']
-    )->name('advances.index');
-
-});
-Route::middleware([
-    'auth',
-    'permission:advance.create'
-])->group(function () {
-
-    Route::get(
-        '/advances/create',
-        [AdvanceController::class,'create']
-    )->name('advances.create');
-
-    Route::post(
-        '/advances',
-        [AdvanceController::class,'store']
-    )->name('advances.store');
-
-});
-Route::middleware([
-    'auth',
-    'permission:loans.view'
-])->group(function () {
-
-    Route::get(
-        '/loans',
-        [LoanController::class,'index']
-    )->name('loans.index');
-
-});
-Route::middleware([
-    'auth',
-    'permission:loans.create'
-])->group(function () {
-
-    Route::get(
-        '/loans/create',
-        [LoanController::class,'create']
-    )->name('loans.create');
-
-    Route::post(
-        '/loans',
-        [LoanController::class,'store']
-    )->name('loans.store');
-
-});
-Route::post(
-    '/payroll/generate',
-    [PayrollController::class,'generateMonthlyPayroll']
-)->name('payroll.generate');
-Route::get(
-    '/leave-balances',
-    [LeaveBalanceController::class,'index']
-)->name('leave-balances.index');
-
-Route::get(
-    '/leave-balances/{leaveBalance}/edit',
-    [LeaveBalanceController::class,'edit']
-)->name('leave-balances.edit');
-
-Route::put(
-    '/leave-balances/{leaveBalance}',
-    [LeaveBalanceController::class,'update']
-)->name('leave-balances.update');
-Route::get(
-    '/my-leaves',
-    [MyLeaveController::class,'index']
-)->name('my-leaves.index');
-
-Route::get(
-    '/my-leaves/create',
-    [MyLeaveController::class,'create']
-)->name('my-leaves.create');
-
-Route::post(
-    '/my-leaves',
-    [MyLeaveController::class,'store']
-)->name('my-leaves.store');
-Route::get(
-    '/leaves',
-    [LeaveController::class,'index']
-)->name('leaves.index');
-
-Route::post(
-    '/leaves/{leave}/approve',
-    [LeaveController::class,'approve']
-)->name('leaves.approve');
-
-Route::post(
-    '/leaves/{leave}/reject',
-    [LeaveController::class,'reject']
-)->name('leaves.reject');
-Route::resource(
-    'products',
-    ProductController::class
-);
-Route::resource(
-    'categories',
-    CategoryController::class
-);
-Route::get('/categories/{category}/edit', [CategoryController::class, 'edit'])->name('categories.edit');
-Route::put('/categories/{category}', [CategoryController::class, 'update'])->name('categories.update');
-Route::get('/products/{product}/edit', [ProductController::class, 'edit'])->name('products.edit');
-Route::put('/products/{product}', [ProductController::class, 'update'])->name('products.update');
-Route::delete('/categories/{category}', [CategoryController::class, 'destroy'])
-    ->name('categories.destroy');
-    Route::delete('/products/{product}', [ProductController::class, 'destroy'])
-    ->name('products.destroy');
-    Route::get('/warehouses', [WarehouseController::class,'index'])
-    ->name('warehouses.index');
-
-Route::get('/warehouses/create', [WarehouseController::class,'create'])
-    ->name('warehouses.create');
-
-Route::post('/warehouses', [WarehouseController::class,'store'])
-    ->name('warehouses.store');
-
-Route::get('/stock-movements', [StockMovementController::class,'index'])
-    ->name('stock-movements.index');
-
-// stock actions
-Route::post('/products/{product}/add-stock', [ProductController::class,'addStock'])
-    ->name('products.addStock');
-
-Route::post('/products/{product}/sell-stock', [ProductController::class,'sellStock'])
-    ->name('products.sellStock');
-    Route::get('/products/{product}', [ProductController::class,'show'])
-    ->name('products.show');
-    Route::get('/warehouses/{warehouse}/edit', [WarehouseController::class,'edit'])->name('warehouses.edit');
-Route::put('/warehouses/{warehouse}', [WarehouseController::class,'update'])->name('warehouses.update');
-Route::delete('/warehouses/{warehouse}', [WarehouseController::class,'destroy'])->name('warehouses.destroy');
-
-Route::resource(
-    'suppliers',
-    SupplierController::class
-);
-
-Route::resource(
-    'purchases',
-    PurchaseController::class
-);
-
-Route::resource(
-    'sales',
-    SaleController::class
-);
-
-Route::resource(
-    'customers',
-    CustomerController::class
-);
-Route::get(
-    '/sales/{sale}/invoice',
-    [SaleController::class,'invoice']
-)->name('sales.invoice');
-
-Route::get(
-    '/sales/{sale}/pdf',
-    [SaleController::class,'pdf']
-)->name('sales.pdf');
-
-Route::resource(
-    'accounts',
-    AccountController::class
-);
-Route::resource(
-    'journal-entries',
-    JournalEntryController::class
-);
-Route::get('/accounting', [AccountingController::class, 'index'])
-    ->name('accounting.index');
-
-    Route::get(
-        'tickets/manage',
-        [TicketController::class, 'manage']
-    )->name('tickets.manage');
-    
-    Route::put(
-        'tickets/{ticket}/status',
-        [TicketController::class, 'updateStatus']
-    )->name('tickets.status');
-
-    Route::resource(
-        'tickets',
-        TicketController::class
-    );
-    Route::get(
-        '/chat',
-        [ChatController::class,'index']
-    )->name('chat.index');
-    
-    Route::get(
-        '/chat/users',
-        [ChatController::class,'users']
-    )->name('chat.users');
-    
-    Route::get(
-        '/chat/start/{user}',
-        [ChatController::class,'start']
-    )->name('chat.start');
-    
-    Route::get(
-        '/chat/{conversation}',
-        [ChatController::class,'show']
-    )->name('chat.show');
-    
-    Route::post(
-        '/chat/{conversation}',
-        [ChatController::class,'send']
-    )->name('chat.send');
-    
 require __DIR__.'/auth.php';

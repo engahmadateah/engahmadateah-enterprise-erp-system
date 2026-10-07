@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Customer extends Model
 {
+    use \App\Models\Concerns\Auditable;
+
     protected $fillable = [
 
         'name',

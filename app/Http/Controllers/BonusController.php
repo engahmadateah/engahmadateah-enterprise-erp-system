@@ -33,15 +33,10 @@ class BonusController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-
-            'employee_id' => 'required',
-
-            'amount' => 'required',
-
-            'reason' => 'required',
-
-            'date' => 'required'
-
+            'employee_id' => 'required|exists:employees,id',
+            'amount'      => 'required|numeric|min:0.01|max:999999999',
+            'reason'      => 'required|string|max:255',
+            'date'        => 'required|date',
         ]);
 
         Bonus::create([

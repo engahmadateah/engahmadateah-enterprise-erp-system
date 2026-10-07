@@ -392,6 +392,31 @@ IT Support
 
 </div>
 
+<!-- REPORTS & AUDIT -->
+@canany(['reports.view','audit.view'])
+<div class="pt-6">
+
+    <h3 class="text-xs uppercase text-slate-400 mb-2 px-2">
+        Insights
+    </h3>
+
+    @can('reports.view')
+    <a href="{{ route('reports.index') }}"
+       class="block px-4 py-2 rounded hover:bg-slate-800 transition">
+        Reports
+    </a>
+    @endcan
+
+    @can('audit.view')
+    <a href="{{ route('audit-logs.index') }}"
+       class="block px-4 py-2 rounded hover:bg-slate-800 transition">
+        Audit Log
+    </a>
+    @endcan
+
+</div>
+@endcanany
+
 <!-- CHAT -->
 <div class="pt-6">
 

@@ -37,9 +37,10 @@ class SupplierController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-
-            'name' => 'required',
-
+            'name'    => 'required|string|max:255',
+            'phone'   => 'nullable|string|max:50',
+            'email'   => 'nullable|email|max:255',
+            'address' => 'nullable|string|max:255',
         ]);
 
         Supplier::create([
@@ -104,9 +105,10 @@ class SupplierController extends Controller
     )
     {
         $request->validate([
-
-            'name' => 'required'
-
+            'name'    => 'required|string|max:255',
+            'phone'   => 'nullable|string|max:50',
+            'email'   => 'nullable|email|max:255',
+            'address' => 'nullable|string|max:255',
         ]);
 
         $supplier->update([

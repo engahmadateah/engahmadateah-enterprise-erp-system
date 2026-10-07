@@ -495,17 +495,17 @@
 
 
 
-                                @foreach($ticket->attachments as $file)
+                                @foreach($ticket->attachments as $fileIndex => $file)
 
 
 
-                                    <a href="{{ asset('storage/'.$file) }}"
+                                    <a href="{{ route('tickets.attachment', [$ticket, $fileIndex]) }}"
                                        target="_blank"
                                        class="group">
 
 
 
-                                        <img src="{{ asset('storage/'.$file) }}"
+                                        <img src="{{ route('tickets.attachment', [$ticket, $fileIndex]) }}"
                                              class="w-12 h-12 rounded-xl object-cover border shadow-sm group-hover:scale-105 transition">
 
 

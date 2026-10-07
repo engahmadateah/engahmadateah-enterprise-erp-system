@@ -8,6 +8,8 @@ use App\Models\StockMovement;
 
 class Product extends Model
 {
+    use \App\Models\Concerns\Auditable;
+
     protected $fillable = [
 
         'name',

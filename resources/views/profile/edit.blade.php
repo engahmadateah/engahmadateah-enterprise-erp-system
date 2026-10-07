@@ -196,6 +196,17 @@
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 
 
+                    {{-- Current password (required to change e-mail or password) --}}
+                    <div>
+                        <label class="block mb-2 text-sm font-semibold text-slate-700">Current Password</label>
+                        <input type="password" name="current_password" autocomplete="current-password"
+                               placeholder="Required to change e-mail or password"
+                               class="w-full rounded-xl border border-slate-300 px-5 py-3 focus:ring-4 focus:ring-indigo-100 focus:border-indigo-500 outline-none">
+                        @error('current_password')
+                            <p class="text-red-500 text-sm mt-2">{{ $message }}</p>
+                        @enderror
+                    </div>
+
                     {{-- Password --}}
                     <div>
 

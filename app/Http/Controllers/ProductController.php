@@ -42,10 +42,12 @@ class ProductController extends Controller
     $request->validate([
         'category_id' => 'required|exists:categories,id',
         'name' => 'required|string|max:255',
-        'sku' => 'required|unique:products,sku',
-        'quantity' => 'required|integer|min:0',
-        'purchase_price' => 'required|numeric',
-        'sale_price' => 'required|numeric',
+        'sku' => 'required|string|max:100|unique:products,sku',
+        'quantity' => 'required|integer|min:0|max:100000000',
+        'purchase_price' => 'required|numeric|min:0|max:999999999',
+        'sale_price' => 'required|numeric|min:0|max:999999999',
+        'warehouse_id' => 'nullable|exists:warehouses,id',
+        'low_stock' => 'nullable|integer|min:0',
     ]);
 
     Product::create([
@@ -107,11 +109,11 @@ public function update(Request $request, Product $product)
 {
     $request->validate([
         'category_id' => 'required|exists:categories,id',
-        'name' => 'required',
-        'sku' => 'required|unique:products,sku,' . $product->id,
-        'quantity' => 'required|integer',
-        'purchase_price' => 'required',
-        'sale_price' => 'required',
+        'name' => 'required|string|max:255',
+        'sku' => 'required|string|max:100|unique:products,sku,' . $product->id,
+        'quantity' => 'required|integer|min:0|max:100000000',
+        'purchase_price' => 'required|numeric|min:0|max:999999999',
+        'sale_price' => 'required|numeric|min:0|max:999999999',
         'warehouse_id' => 'nullable|exists:warehouses,id',
 'low_stock' => 'nullable|integer|min:0',
     ]);
@@ -124,6 +126,8 @@ public function update(Request $request, Product $product)
         'purchase_price' => $request->purchase_price,
         'sale_price' => $request->sale_price,
         'is_active' => $request->has('is_active'),
+        'warehouse_id' => $request->warehouse_id,
+        'low_stock' => $request->low_stock ?? $product->low_stock,
     ]);
 
     return redirect()
@@ -144,38 +148,51 @@ public function update(Request $request, Product $product)
     public function addStock(Request $request, Product $product)
 {
     $request->validate([
-        'quantity' => 'required|integer|min:1'
+        'quantity' => 'required|integer|min:1|max:1000000'
     ]);
 
-    $product->increment('quantity', $request->quantity);
+    \Illuminate\Support\Facades\DB::transaction(function () use ($request, $product) {
+        $product->increment('quantity', $request->quantity);
 
-    StockMovement::create([
-        'product_id' => $product->id,
-        'type' => 'in',
-        'quantity' => $request->quantity,
-        'user_id' => auth()->id(),
-    ]);
+        StockMovement::create([
+            'product_id' => $product->id,
+            'type' => 'in',
+            'quantity' => $request->quantity,
+            'user_id' => auth()->id(),
+        ]);
+    });
 
     return back()->with('success','Stock added');
 }
 public function sellStock(Request $request, Product $product)
 {
     $request->validate([
-        'quantity' => 'required|integer|min:1'
+        'quantity' => 'required|integer|min:1|max:1000000'
     ]);
 
-    if ($product->quantity < $request->quantity) {
+    // lock the row: two parallel requests must not drive stock negative
+    $ok = \Illuminate\Support\Facades\DB::transaction(function () use ($request, $product) {
+        $locked = Product::lockForUpdate()->findOrFail($product->id);
+
+        if ($locked->quantity < $request->quantity) {
+            return false;
+        }
+
+        $locked->decrement('quantity', $request->quantity);
+
+        StockMovement::create([
+            'product_id' => $locked->id,
+            'type' => 'out',
+            'quantity' => $request->quantity,
+            'user_id' => auth()->id(),
+        ]);
+
+        return true;
+    });
+
+    if (! $ok) {
         return back()->with('error','Not enough stock');
     }
-
-    $product->decrement('quantity', $request->quantity);
-
-    StockMovement::create([
-        'product_id' => $product->id,
-        'type' => 'out',
-        'quantity' => $request->quantity,
-        'user_id' => auth()->id(),
-    ]);
 
     return back()->with('success','Stock sold');
 }

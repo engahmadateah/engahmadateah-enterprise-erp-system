@@ -382,4 +382,6 @@
 
 </div>
 
+@include('dashboard._kpis')
+
 @endsection

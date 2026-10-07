@@ -40,7 +40,8 @@ class OvertimeController extends Controller
 
         'date' => 'required|date',
 
-        'hours' => 'required|numeric|min:0.5',
+        'hours' => 'required|numeric|min:0.5|max:24',
+        'notes' => 'nullable|string|max:500',
 
     ]);
 

@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Purchase extends Model
 {
+    use \App\Models\Concerns\Auditable;
+
     protected $fillable = [
 
         'supplier_id',

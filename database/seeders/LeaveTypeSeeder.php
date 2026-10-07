@@ -9,24 +9,16 @@ class LeaveTypeSeeder extends Seeder
 {
     public function run(): void
     {
-        LeaveType::create([
-            'name' => 'Annual Leave',
-            'is_deducted' => true
-        ]);
-
-        LeaveType::create([
-            'name' => 'Sick Leave',
-            'is_deducted' => false
-        ]);
-
-        LeaveType::create([
-            'name' => 'Hourly Leave',
-            'is_deducted' => true
-        ]);
-
-        LeaveType::create([
-            'name' => 'Unpaid Leave',
-            'is_deducted' => false
-        ]);
+        foreach ([
+            ['Annual Leave', true],
+            ['Sick Leave', false],
+            ['Hourly Leave', true],
+            ['Unpaid Leave', false],
+        ] as [$name, $deducted]) {
+            LeaveType::updateOrCreate(
+                ['name' => $name],
+                ['is_deducted' => $deducted]
+            );
+        }
     }
 }

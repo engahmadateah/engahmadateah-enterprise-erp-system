@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Employee extends Model
 {
+    use \App\Models\Concerns\Auditable;
+
     protected $fillable = [
 
         'employee_no',

@@ -26,11 +26,9 @@ class AccountController extends Controller
     {
         $request->validate([
 
-            'code' => 'required|unique:accounts',
-
-            'name' => 'required',
-
-            'type' => 'required'
+            'code' => 'required|string|max:20|unique:accounts',
+            'name' => 'required|string|max:255',
+            'type' => 'required|in:asset,liability,equity,revenue,expense'
 
         ]);
 
@@ -63,6 +61,9 @@ class AccountController extends Controller
         );
     }
 
+    /** Accounts the sales / purchase / payroll code posts to by code. */
+    private const SYSTEM_CODES = ['1000', '1100', '4000', '5000'];
+
     public function update(
         Request $request,
         Account $account
@@ -70,13 +71,18 @@ class AccountController extends Controller
     {
         $request->validate([
 
-            'code' => 'required',
+            'code' => 'required|string|max:20|unique:accounts,code,' . $account->id,
+            'name' => 'required|string|max:255',
 
-            'name' => 'required',
-
-            'type' => 'required'
+            'type' => 'required|in:asset,liability,equity,revenue,expense'
 
         ]);
+
+        abort_if(
+            in_array($account->code, self::SYSTEM_CODES, true) && $request->code !== $account->code,
+            422,
+            'System account codes cannot be changed.'
+        );
 
         $account->update([
 
@@ -97,6 +103,10 @@ class AccountController extends Controller
 
     public function destroy(Account $account)
     {
+        if (in_array($account->code, self::SYSTEM_CODES, true)) {
+            return back()->with('error', 'System accounts cannot be deleted.');
+        }
+
         $account->delete();
 
         return redirect()

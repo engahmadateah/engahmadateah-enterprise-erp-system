@@ -33,15 +33,12 @@ class LoanController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-
-            'employee_id'=>'required',
-
-            'amount'=>'required|numeric',
-
-            'monthly_installment'=>'required|numeric',
-
-            'start_date'=>'required'
-
+            'employee_id'         => 'required|exists:employees,id',
+            'amount'              => 'required|numeric|min:0.01|max:999999999',
+            // an installment bigger than the loan makes no sense
+            'monthly_installment' => 'required|numeric|min:0.01|lte:amount',
+            'start_date'          => 'required|date',
+            'notes'               => 'nullable|string|max:500',
         ]);
 
         Loan::create([

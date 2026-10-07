@@ -37,11 +37,17 @@ class LeaveBalanceController extends Controller
         $request->validate([
 
             'annual_balance' =>
-                'required|integer|min:0'
-
+                'required|integer|min:0|max:366'
         ]);
 
         $used = $leaveBalance->used_balance;
+
+        if ($request->annual_balance < $used) {
+            return back()->withInput()->with(
+                'error',
+                'Balance cannot be lower than the days already used.'
+            );
+        }
 
         $leaveBalance->update([
 

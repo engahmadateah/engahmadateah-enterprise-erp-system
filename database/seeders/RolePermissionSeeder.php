@@ -164,13 +164,18 @@ class RolePermissionSeeder extends Seeder
 
 'chat.view',
 
-'accounting.view',
+
 
 
 
         ];
 
-        foreach ($permissions as $permission) {
+        // payroll.create / journal-entries are used by the sidebar & routes
+        $permissions[] = 'payroll.create';
+        $permissions[] = 'sales.cancel';
+        $permissions[] = 'audit.view';
+
+        foreach (array_unique($permissions) as $permission) {
             Permission::firstOrCreate([
                 'name' => $permission
             ]);
@@ -184,24 +189,38 @@ class RolePermissionSeeder extends Seeder
             Permission::all()
         );
 
-        Role::firstOrCreate([
-            'name' => 'Admin'
-        ]);
+        // Sensible defaults. givePermissionTo() is additive, so permissions you
+        // already customised from the Roles screen are NOT removed.
+        $employeeBase = [
+            'dashboard.view',
+            'my-leaves.view', 'my-leaves.create',
+            'tickets.view', 'tickets.create', 'tickets.edit', 'tickets.delete',
+            'chat.view',
+        ];
 
-        Role::firstOrCreate([
-            'name' => 'Manager'
-        ]);
+        $defaults = [
+            'Admin'      => Permission::all()->pluck('name')->all(),
+            'Manager'    => array_merge($employeeBase, [
+                'employees.view', 'attendance.view', 'leaves.view', 'leaves.edit',
+            ]),
+            'HR'         => array_merge($employeeBase, [
+                'employees.view', 'employees.create', 'employees.edit',
+                'departments.view', 'attendance.view', 'attendance.create', 'attendance.edit',
+                'leaves.view', 'leaves.edit', 'leave-balance.view', 'leave-balance.edit',
+                'payroll.view', 'payroll.create',
+                'overtime.view', 'overtime.create', 'bonus.view', 'bonus.create',
+                'advance.view', 'advance.create', 'loans.view', 'loans.create',
+            ]),
+            'Accountant' => array_merge($employeeBase, [
+                'payroll.view', 'accounting.view', 'accounts.view', 'journal-entries.view',
+                'sales.view', 'purchases.view', 'reports.view',
+            ]),
+            'Employee'   => $employeeBase,
+        ];
 
-        Role::firstOrCreate([
-            'name' => 'HR'
-        ]);
-
-        Role::firstOrCreate([
-            'name' => 'Accountant'
-        ]);
-
-        Role::firstOrCreate([
-            'name' => 'Employee'
-        ]);
+        foreach ($defaults as $roleName => $perms) {
+            Role::firstOrCreate(['name' => $roleName])
+                ->givePermissionTo($perms);
+        }
     }
 }

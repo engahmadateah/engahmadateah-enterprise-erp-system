@@ -38,19 +38,24 @@ class AttendanceController extends Controller
     {
         $request->validate([
 
-            'employee_id' => 'required',
+            'employee_id' => 'required|exists:employees,id',
 
             'attendance_date' => 'required|date',
 
-            'check_in' => 'nullable',
+            'check_in' => 'nullable|date_format:H:i,H:i:s',
 
-            'check_out' => 'nullable',
+            'check_out' => 'nullable|date_format:H:i,H:i:s',
 
-            'status' => 'required',
+            'status' => 'required|in:present,absent,late,leave',
+
+            'notes' => 'nullable|string|max:500',
 
         ]);
 
-        Attendance::create($request->all());
+        Attendance::create($request->only([
+            'employee_id', 'attendance_date', 'check_in',
+            'check_out', 'status', 'notes',
+        ]));
 
         return redirect()
             ->route('attendance.index')
@@ -80,17 +85,24 @@ class AttendanceController extends Controller
     {
         $request->validate([
 
-            'employee_id' => 'required',
+            'employee_id' => 'required|exists:employees,id',
 
-            'attendance_date' => 'required',
+            'attendance_date' => 'required|date',
 
-            'status' => 'required',
+            'check_in' => 'nullable|date_format:H:i,H:i:s',
+
+            'check_out' => 'nullable|date_format:H:i,H:i:s',
+
+            'status' => 'required|in:present,absent,late,leave',
+
+            'notes' => 'nullable|string|max:500',
 
         ]);
 
-        $attendance->update(
-            $request->all()
-        );
+        $attendance->update($request->only([
+            'employee_id', 'attendance_date', 'check_in',
+            'check_out', 'status', 'notes',
+        ]));
 
         return redirect()
             ->route('attendance.index')
@@ -137,9 +149,25 @@ class AttendanceController extends Controller
 }
 public function saveDailySheet(Request $request)
 {
+    $request->validate([
+        'attendance_date' => 'required|date',
+        'employees' => 'required|array',
+        'employees.*.status' => 'nullable|in:present,absent,late,leave',
+        'employees.*.check_in' => 'nullable|date_format:H:i,H:i:s',
+        'employees.*.check_out' => 'nullable|date_format:H:i,H:i:s',
+        'employees.*.notes' => 'nullable|string|max:500',
+    ]);
+
     $date = $request->attendance_date;
 
+    $validIds = Employee::whereIn('id', array_keys($request->employees))
+        ->pluck('id')->all();
+
     foreach ($request->employees as $employeeId => $data) {
+
+        if (! in_array((int) $employeeId, $validIds, true)) {
+            continue;
+        }
 
         Attendance::updateOrCreate(
 

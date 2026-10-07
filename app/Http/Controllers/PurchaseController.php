@@ -5,13 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use App\Models\Purchase;
 use App\Models\Supplier;
-use App\Models\Account;
-use App\Models\JournalEntry;
-use App\Models\JournalEntryLine;
 use App\Models\Warehouse;
 use App\Models\StockMovement;
-use Illuminate\Http\Request;
 use App\Services\AccountingService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 class PurchaseController extends Controller
 {
@@ -20,189 +19,72 @@ class PurchaseController extends Controller
         $purchases = Purchase::with([
             'supplier',
             'product',
-            'warehouse'
+            'warehouse',
         ])
         ->latest()
         ->paginate(20);
 
-        return view(
-            'purchases.index',
-            compact('purchases')
-        );
-
+        return view('purchases.index', compact('purchases'));
     }
 
     public function create()
     {
-        $suppliers = Supplier::all();
-
-        $products = Product::all();
-
-        $warehouses = Warehouse::all();
-
-        return view(
-            'purchases.create',
-            compact(
-                'suppliers',
-                'products',
-                'warehouses'
-            )
-        );
+        return view('purchases.create', [
+            'suppliers'  => Supplier::all(),
+            'products'   => Product::all(),
+            'warehouses' => Warehouse::all(),
+        ]);
     }
 
-    public function store(Request $request)
+    public function store(Request $request, AccountingService $accounting)
     {
-        $request->validate([
-
-            'supplier_id' => 'required',
-
-            'product_id' => 'required',
-
-            'warehouse_id' => 'required',
-
-            'quantity' => 'required|integer|min:1',
-
-            'unit_price' => 'required|numeric',
-
-            'purchase_date' => 'required',
-
+        $data = $request->validate([
+            'supplier_id'   => 'required|exists:suppliers,id',
+            'product_id'    => 'required|exists:products,id',
+            'warehouse_id'  => 'required|exists:warehouses,id',
+            'quantity'      => 'required|integer|min:1|max:1000000',
+            'unit_price'    => 'required|numeric|min:0|max:999999999',
+            'purchase_date' => 'required|date',
+            'notes'         => 'nullable|string|max:1000',
         ]);
 
-        $total =
-            $request->quantity
-            *
-            $request->unit_price;
+        try {
+            DB::transaction(function () use ($data, $accounting) {
 
-        $purchase = Purchase::create([
+                $acc = $accounting->accounts(['1100', '1000']);
 
-            'supplier_id' =>
-                $request->supplier_id,
+                $total = round($data['quantity'] * $data['unit_price'], 2);
 
-            'product_id' =>
-                $request->product_id,
+                $purchase = Purchase::create($data + ['total' => $total]);
 
-            'warehouse_id' =>
-                $request->warehouse_id,
+                Product::whereKey($data['product_id'])
+                    ->increment('quantity', $data['quantity']);
 
-            'quantity' =>
-                $request->quantity,
+                StockMovement::create([
+                    'product_id'   => $data['product_id'],
+                    'warehouse_id' => $data['warehouse_id'],
+                    'user_id'      => auth()->id(),
+                    'type'         => 'in',
+                    'quantity'     => $data['quantity'],
+                    'note'         => 'Purchase #' . $purchase->id,
+                ]);
 
-            'unit_price' =>
-                $request->unit_price,
+                // ONE journal entry only (it used to be posted twice)
+                $accounting->createEntry(
+                    'Purchase #' . $purchase->id,
+                    auth()->id(),
+                    [
+                        ['account_id' => $acc['1100']->id, 'debit'  => $total],
+                        ['account_id' => $acc['1000']->id, 'credit' => $total],
+                    ]
+                );
+            });
+        } catch (RuntimeException $e) {
+            return back()->withInput()->with('error', $e->getMessage());
+        }
 
-            'total' =>
-                $total,
-
-            'purchase_date' =>
-                $request->purchase_date,
-
-            'notes' =>
-                $request->notes,
-
-        ]);
-
-        $inventoryAccount = Account::where(
-            'code',
-            '1100'
-        )->first();
-        
-        $cashAccount = Account::where(
-            'code',
-            '1000'
-        )->first();
-        
-        $entry = JournalEntry::create([
-        
-            'entry_number' =>
-                'JE-' . date('YmdHis'),
-        
-            'entry_date' =>
-                now(),
-        
-            'description' =>
-                'Purchase #'.$purchase->id,
-        
-            'user_id' =>
-                auth()->id()
-        
-        ]);
-        JournalEntryLine::create([
-
-            'journal_entry_id' =>
-                $entry->id,
-        
-            'account_id' =>
-                $inventoryAccount->id,
-        
-            'debit' =>
-                $purchase->total,
-        
-            'credit' =>
-                0
-        
-        ]);
-        JournalEntryLine::create([
-
-            'journal_entry_id' =>
-                $entry->id,
-        
-            'account_id' =>
-                $cashAccount->id,
-        
-            'debit' =>
-                0,
-        
-            'credit' =>
-                $purchase->total
-        
-        ]);
-
-        $product = Product::find(
-            $request->product_id
-        );
-
-        $product->increment(
-            'quantity',
-            $request->quantity
-        );
-
-        StockMovement::create([
-
-            'product_id' => $product->id,
-        
-            'warehouse_id' => $request->warehouse_id,
-        
-            'user_id' => auth()->id(),
-        
-            'type' => 'in',
-        
-            'quantity' => $request->quantity,
-        
-        ]);
-        $accounting = new AccountingService();
-
-$inventory = Account::where('code','1100')->first();
-$cash = Account::where('code','1000')->first();
-
-$accounting->createEntry(
-    'Purchase #' . $purchase->id,
-    auth()->id(),
-    [
-        [
-            'account_id' => $inventory->id,
-            'debit' => $purchase->total,
-        ],
-        [
-            'account_id' => $cash->id,
-            'credit' => $purchase->total,
-        ]
-    ]
-);
         return redirect()
             ->route('purchases.index')
-            ->with(
-                'success',
-                'Purchase Created Successfully'
-            );
+            ->with('success', 'Purchase Created Successfully');
     }
 }

@@ -32,6 +32,26 @@
 </div>
 
 @endif
+
+        @if(session('error'))
+            <div class="mb-4 mx-6 mt-4">
+                <div class="bg-red-100 text-red-700 p-4 rounded">
+                    {{ session('error') }}
+                </div>
+            </div>
+        @endif
+
+        @if($errors->any())
+            <div class="mb-4 mx-6 mt-4">
+                <div class="bg-red-100 text-red-700 p-4 rounded">
+                    <ul class="list-disc list-inside">
+                        @foreach($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            </div>
+        @endif
         <main class="flex-1 overflow-y-auto p-6">
 
             @yield('content')

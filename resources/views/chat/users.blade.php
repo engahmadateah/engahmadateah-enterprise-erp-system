@@ -46,13 +46,7 @@ class="w-full border rounded p-3 mt-4">
 
 </div>
 
-<a
-href="{{ route('chat.start',$user) }}"
-class="bg-blue-600 text-white px-4 py-2 rounded">
-
-Start Chat
-
-</a>
+<form method="POST" action="{{ route('chat.start', $user) }}">@csrf<button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded">Start Chat</button></form>
 
 </div>
 

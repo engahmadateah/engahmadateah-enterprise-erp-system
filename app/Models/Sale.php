@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Sale extends Model
 {
+    use \App\Models\Concerns\Auditable;
+
     protected $fillable = [
         'customer_id',
         'product_id',
@@ -21,7 +23,26 @@ class Sale extends Model
         'user_id',
         
         'invoice_number',
+        'status',
+        'cancelled_at',
+        'cancelled_by',
+        'cancel_reason',
     ];
+
+    protected function casts(): array
+    {
+        return ['cancelled_at' => 'datetime'];
+    }
+
+    public function isCancelled(): bool
+    {
+        return $this->status === 'cancelled';
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('status', '!=', 'cancelled');
+    }
 
     public function product()
     {

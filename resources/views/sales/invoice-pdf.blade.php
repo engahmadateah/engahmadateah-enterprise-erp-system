@@ -250,6 +250,7 @@ body {
 
 
 <body>
+@if($sale->isCancelled())<div style="color:#b91c1c;font-size:28px;font-weight:bold;text-align:center;border:3px solid #b91c1c;padding:6px;margin-bottom:12px">CANCELLED</div>@endif
 
 
 <div class="container">

@@ -31,6 +31,8 @@ class UpdateUserRequest extends FormRequest
             ],
     
             'phone' => 'nullable|max:30',
+            'password' => ['nullable', 'confirmed', \Illuminate\Validation\Rules\Password::defaults()],
+            'role' => 'required|exists:roles,name',
     
         ];
     }

@@ -23,19 +23,16 @@ class StoreEmployeeRequest extends FormRequest
 {
     return [
 
-        'department_id' => 'required',
+        'department_id' => 'required|exists:departments,id',
 
-        'first_name' => 'required',
+        'first_name' => 'required|string|max:100',
+        'last_name' => 'required|string|max:100',
 
-        'last_name' => 'required',
+        'email' => 'required|email|max:255|unique:employees,email|unique:users,email',
 
-        'email' => 'required|email|unique:employees,email',
-
-        'phone' => 'nullable',
-
-        'position' => 'required',
-
-        'salary' => 'required|numeric',
+        'phone' => 'nullable|string|max:50',
+        'position' => 'required|string|max:100',
+        'salary' => 'required|numeric|min:0|max:999999999',
 
         'join_date' => 'required|date',
 

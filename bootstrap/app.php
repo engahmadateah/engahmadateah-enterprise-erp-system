@@ -14,6 +14,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        $middleware->web(append: [
+            \Illuminate\Session\Middleware\AuthenticateSession::class,
+            \App\Http\Middleware\EnsureUserIsActive::class,
+            \App\Http\Middleware\SecurityHeaders::class,
+        ]);
+
         $middleware->alias([
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
@@ -21,5 +27,13 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // Foreign-key violation on delete (MySQL 1451) -> friendly message instead of a 500
+        $exceptions->render(function (\Illuminate\Database\QueryException $e, $request) {
+            if (($e->errorInfo[1] ?? null) == 1451 && ! $request->expectsJson()) {
+                return back()->with(
+                    'error',
+                    'Cannot delete: this record is used by other data.'
+                );
+            }
+        });
     })->create();

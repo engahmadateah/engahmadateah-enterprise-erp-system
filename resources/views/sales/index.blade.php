@@ -379,6 +379,7 @@
 
 
                             🧾 {{ $sale->invoice_number }}
+@if($sale->isCancelled())<span class="ml-2 px-2 py-1 rounded-lg bg-red-100 text-red-700 text-xs font-bold">CANCELLED</span>@endif
 
 
                         </span>
@@ -561,6 +562,21 @@
 
 
     </a>
+
+    @can('sales.cancel')
+    @unless($sale->isCancelled())
+    <form method="POST" action="{{ route('sales.cancel', $sale) }}" class="ml-2"
+          onsubmit="return confirm('Cancel this sale and return the stock?')">
+        @csrf
+        <input type="hidden" name="reason" value="">
+        <button type="submit"
+                onclick="var r = prompt('Reason for cancelling?'); if (!r) { return false; } this.form.reason.value = r;"
+                class="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white font-semibold shadow-md transition">
+            ✖ Cancel
+        </button>
+    </form>
+    @endunless
+    @endcan
 
 
 

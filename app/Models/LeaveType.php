@@ -11,6 +11,7 @@ class LeaveType extends Model
         'name',
 
         'is_deducted',
+        
 
     ];
 

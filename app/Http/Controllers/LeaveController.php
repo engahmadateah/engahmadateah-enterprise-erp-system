@@ -3,233 +3,92 @@
 namespace App\Http\Controllers;
 
 use App\Models\Leave;
-use App\Models\Employee;
 use App\Models\LeaveBalance;
-use Illuminate\Http\Request;
-use Carbon\Carbon;
-use App\Models\LeaveType;
+use Illuminate\Support\Facades\DB;
 
+/**
+ * HR side of leaves (list / approve / reject).
+ * Employee requests live in MyLeaveController.
+ */
 class LeaveController extends Controller
 {
-    /*
-    |--------------------------------------------------------------------------
-    | Employee Requests
-    |--------------------------------------------------------------------------
-    */
-
-    public function myLeaves()
-    {
-        $employee = auth()
-            ->user()
-            ->employee;
-
-        $leaves = Leave::where(
-            'employee_id',
-            $employee->id
-        )
-        ->latest()
-        ->get();
-
-        return view(
-            'leaves.my-leaves',
-            compact(
-                'employee',
-                'leaves'
-            )
-        );
-    }
-
-    public function create()
-{
-    $leaveTypes = LeaveType::orderBy('name')->get();
-
-    return view('leaves.create', compact('leaveTypes'));
-}
-
-    public function store(Request $request)
-    {
-        $employee = auth()
-            ->user()
-            ->employee;
-
-        $request->validate([
-
-            'leave_type_id' => 'required',
-
-            'start_date' => 'required|date',
-
-            'end_date' => 'required|date',
-
-            'reason' => 'nullable'
-
-        ]);
-
-        $days = Carbon::parse(
-            $request->start_date
-        )->diffInDays(
-            Carbon::parse(
-                $request->end_date
-            )
-        ) + 1;
-
-        $balance = LeaveBalance::where(
-            'employee_id',
-            $employee->id
-        )->first();
-
-        if (
-            $request->leave_type_id == 'annual'
-            &&
-            $balance
-            &&
-            $days > $balance->remaining_balance
-        ) {
-
-            return back()
-                ->with(
-                    'error',
-                    'Not enough leave balance'
-                );
-        }
-        
-        Leave::create([
-
-            'employee_id' =>
-                $employee->id,
-
-            'leave_type_id' => $request->leave_type_id,
-
-            'start_date' =>
-                $request->start_date,
-
-            'end_date' =>
-                $request->end_date,
-
-            'days' =>
-                $days,
-
-            'reason' =>
-                $request->reason,
-
-            'status' =>
-                'pending',
-
-        ]);
-
-        return redirect()
-            ->route(
-                'my-leaves.index'
-            )
-            ->with(
-                'success',
-                'Leave Request Submitted'
-            );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | HR Requests
-    |--------------------------------------------------------------------------
-    */
-
     public function index()
     {
-        $leaves = Leave::with(
-            'employee'
-        )
-        ->latest()
-        ->paginate(20);
+        $leaves = Leave::with('employee', 'leaveType')
+            ->latest()
+            ->paginate(20);
 
-        return view(
-            'leaves.index',
-            compact('leaves')
-        );
+        return view('leaves.index', compact('leaves'));
     }
 
-    public function approve(
-        
-        Leave $leave
-    )
+    public function approve(Leave $leave)
     {
-        if (
-            $leave->status != 'pending'
-        ) {
-            return back();
+        if ($leave->employee && $leave->employee->user_id === auth()->id()
+            && ! auth()->user()->hasRole('Super Admin')) {
+            return back()->with('error', 'You cannot approve your own leave request.');
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Deduct Annual Leave Only
-        |--------------------------------------------------------------------------
-        */
+        if ($leave->status !== 'pending') {
+            return back()->with('error', 'This request was already processed.');
+        }
 
-        if (
-            $leave->leaveType &&
-            $leave->leaveType->is_deducted
-        ) {
+        $error = null;
 
-            $balance = LeaveBalance::where(
-                'employee_id',
-                $leave->employee_id
-            )->first();
+        DB::transaction(function () use ($leave, &$error) {
 
-            if ($balance) {
+            if ($leave->leaveType && $leave->leaveType->is_deducted) {
 
-                $balance->update([
+                $balance = LeaveBalance::where('employee_id', $leave->employee_id)
+                    ->lockForUpdate()
+                    ->first();
 
-                    'used_balance' =>
-                        $balance->used_balance
-                        + $leave->days,
+                if ($balance) {
+                    // balance may have changed since the request was submitted
+                    if ($leave->days > $balance->remaining_balance) {
+                        $error = 'Not enough leave balance';
+                        return;
+                    }
 
-                    'remaining_balance' =>
-                        $balance->remaining_balance
-                        - $leave->days,
-
-                ]);
+                    $balance->update([
+                        'used_balance'      => $balance->used_balance + $leave->days,
+                        'remaining_balance' => $balance->remaining_balance - $leave->days,
+                    ]);
+                }
             }
+
+            $leave->update([
+                'status'      => 'approved',
+                'approved_by' => auth()->id(),
+                'approved_at' => now(),
+            ]);
+        });
+
+        if ($error) {
+            return back()->with('error', $error);
+        }
+
+        return back()->with('success', 'Leave Approved');
+    }
+
+    public function reject(Leave $leave)
+    {
+        if ($leave->employee && $leave->employee->user_id === auth()->id()
+            && ! auth()->user()->hasRole('Super Admin')) {
+            return back()->with('error', 'You cannot process your own leave request.');
+        }
+
+        // an approved leave already consumed balance; rejecting it here would
+        // leave the balance wrong, so only pending requests can be rejected
+        if ($leave->status !== 'pending') {
+            return back()->with('error', 'This request was already processed.');
         }
 
         $leave->update([
-
-            'status' =>
-                'approved',
-
-            'approved_by' =>
-                auth()->id(),
-
-            'approved_at' =>
-                now(),
-
+            'status'      => 'rejected',
+            'approved_by' => auth()->id(),
+            'approved_at' => now(),
         ]);
 
-        return back()
-            ->with(
-                'success',
-                'Leave Approved'
-            );
-    }
-
-    public function reject(
-        Leave $leave
-    )
-    {
-        $leave->update([
-
-            'status' =>
-                'rejected',
-
-            'approved_by' =>
-                auth()->id(),
-
-            'approved_at' =>
-                now(),
-
-        ]);
-
-        return back()
-            ->with(
-                'success',
-                'Leave Rejected'
-            );
+        return back()->with('success', 'Leave Rejected');
     }
 }

@@ -7,6 +7,16 @@ use Illuminate\Http\Request;
 
 class TicketController extends Controller
 {
+    /** Owner of the ticket, or an IT manager (managetickets.view). */
+    private function authorizeTicket(Ticket $ticket): void
+    {
+        abort_unless(
+            $ticket->user_id === auth()->id()
+                || auth()->user()->can('managetickets.view'),
+            403
+        );
+    }
+
     public function index()
     {
         $tickets = Ticket::where(
@@ -29,11 +39,17 @@ class TicketController extends Controller
 {
     $request->validate([
 
-        'title' => 'required',
+        'title' => 'required|string|max:255',
 
-        'description' => 'required',
+        'description' => 'required|string|max:5000',
 
-        'attachments.*' => 'image|max:4096'
+        'teamviewer_id' => 'nullable|string|max:50',
+
+        'ip_address' => 'nullable|ip',
+
+        'attachments' => 'nullable|array|max:5',
+
+        'attachments.*' => 'image|mimes:jpg,jpeg,png,gif,webp|max:4096'
 
     ]);
 
@@ -43,17 +59,14 @@ class TicketController extends Controller
 
         foreach ($request->file('attachments') as $file) {
 
-            $files[] = $file->store(
-                'tickets',
-                'public'
-            );
+            $files[] = $file->store('tickets', 'local');   // private disk
         }
     }
 
     Ticket::create([
 
         'ticket_number' =>
-            'TIC-' . now()->format('YmdHis'),
+            'TIC-' . now()->format('YmdHis') . '-' . \Illuminate\Support\Str::upper(\Illuminate\Support\Str::random(4)),
 
         'user_id' =>
             auth()->id(),
@@ -85,6 +98,23 @@ class TicketController extends Controller
         );
 }
     
+    /** Authorised download of a ticket attachment (private disk). */
+    public function attachment(Ticket $ticket, int $index)
+    {
+        $this->authorizeTicket($ticket);
+
+        $path = ($ticket->attachments ?? [])[$index] ?? null;
+        abort_unless($path, 404);
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('local');
+        if (! $disk->exists($path)) {
+            $disk = \Illuminate\Support\Facades\Storage::disk('public'); // legacy uploads
+        }
+        abort_unless($disk->exists($path), 404);
+
+        return $disk->download($path, null, ['X-Content-Type-Options' => 'nosniff']);
+    }
+
     public function manage()
     {
         $tickets = Ticket::with('user')
@@ -102,6 +132,10 @@ class TicketController extends Controller
         Ticket $ticket
     )
     {
+        $request->validate([
+            'status' => 'required|in:pending,processing,completed',
+        ]);
+
         $ticket->update([
             'status' => $request->status
         ]);
@@ -112,6 +146,8 @@ class TicketController extends Controller
 
     public function show(Ticket $ticket)
 {
+    $this->authorizeTicket($ticket);
+
     return view(
         'tickets.show',
         compact('ticket')
@@ -120,6 +156,8 @@ class TicketController extends Controller
 
 public function edit(Ticket $ticket)
 {
+    $this->authorizeTicket($ticket);
+
     return view(
         'tickets.edit',
         compact('ticket')
@@ -131,9 +169,11 @@ public function update(
     Ticket $ticket
 )
 {
+    $this->authorizeTicket($ticket);
+
     $request->validate([
-        'title' => 'required',
-        'description' => 'required',
+        'title' => 'required|string|max:255',
+        'description' => 'required|string|max:5000',
     ]);
 
     $ticket->update([
@@ -151,6 +191,8 @@ public function update(
 
 public function destroy(Ticket $ticket)
 {
+    $this->authorizeTicket($ticket);
+
     $ticket->delete();
 
     return redirect()
